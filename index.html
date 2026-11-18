@@ -24,9 +24,12 @@
         <button class="nav-item" data-game="seer"><span class="nav-glyph">◉</span><span>Duel of the Seers</span></button>
         <button class="nav-item" data-game="fish"><span class="nav-glyph">◈</span><span>Fish Puzzle</span></button>
       </nav>
-      <div class="rail-foot">
-        <span class="privacy-dot"></span>
-        <span><b>Local only</b><small>No data leaves this browser</small></span>
+      <div class="rail-bottom">
+        <label class="language-picker rail-language"><span id="language-label">Language</span><select id="language-select" aria-label="Language"><option value="en">English</option><option value="de">Deutsch</option><option value="tr">Türkçe</option></select></label>
+        <div class="rail-foot">
+          <span class="privacy-dot"></span>
+          <span><b>Local only</b><small>No data leaves this browser</small></span>
+        </div>
       </div>
     </aside>
 
@@ -37,7 +40,6 @@
           <h1 id="page-title">Okey Card Game</h1>
         </div>
         <div class="top-actions">
-          <label class="language-picker"><span id="language-label">Language</span><select id="language-select" aria-label="Language"><option value="en">English</option><option value="de">Deutsch</option><option value="tr">Türkçe</option></select></label>
           <button id="rules-button" class="ghost-button">Rules & method</button>
           <button id="reset-button" class="danger-button">Reset game</button>
         </div>

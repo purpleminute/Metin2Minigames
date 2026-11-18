@@ -1,4 +1,4 @@
-const CACHE = "m2-oracle-v2";
+const CACHE = "m2-oracle-v3";
 const ASSETS = ["./", "./index.html", "./styles.css", "./src/app.js", "./src/engines.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", event => {

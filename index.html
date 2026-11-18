@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#070b12">
+  <meta name="description" content="A private, browser-only decision assistant for Metin2 event minigames.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+  <title>Metin2 Minigame Oracle</title>
+</head>
+<body>
+  <a class="skip-link" href="#workspace">Skip to advisor</a>
+  <div class="app-shell">
+    <aside class="rail" aria-label="Minigames">
+      <div class="brand" aria-label="Metin2 Minigame Oracle">
+        <span class="brand-mark">M2</span>
+        <span class="brand-copy"><b>Oracle</b><small>Minigame lab</small></span>
+      </div>
+      <nav class="game-nav">
+        <button class="nav-item active" data-game="okey"><span class="nav-glyph">◫</span><span>Okey</span></button>
+        <button class="nav-item" data-game="king"><span class="nav-glyph">♔</span><span>Catch the King</span></button>
+        <button class="nav-item" data-game="yut"><span class="nav-glyph">╳</span><span>Yutnori</span></button>
+        <button class="nav-item" data-game="seer"><span class="nav-glyph">◉</span><span>Duel of the Seers</span></button>
+        <button class="nav-item" data-game="fish"><span class="nav-glyph">◈</span><span>Fish Puzzle</span></button>
+      </nav>
+      <div class="rail-foot">
+        <span class="privacy-dot"></span>
+        <span><b>Local only</b><small>No data leaves this browser</small></span>
+      </div>
+    </aside>
+
+    <main id="workspace" class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Decision engine</p>
+          <h1 id="page-title">Okey Card Game</h1>
+        </div>
+        <div class="top-actions">
+          <button id="rules-button" class="ghost-button">Rules & method</button>
+          <button id="reset-button" class="danger-button">Reset game</button>
+        </div>
+      </header>
+
+      <div id="game-root" class="game-root" aria-live="polite"></div>
+
+      <footer class="disclaimer">
+        <b>What “perfect” means here.</b> The advisor exhausts deterministic legal moves and uses exact known-card probabilities where the rules expose enough information. Hidden server RNG and undocumented AI behavior are shown as uncertainty, never presented as guaranteed outcomes.
+      </footer>
+    </main>
+  </div>
+
+  <dialog id="rules-dialog">
+    <div class="dialog-head">
+      <div><p class="eyebrow">Reference</p><h2 id="dialog-title">Rules & method</h2></div>
+      <button id="dialog-close" class="icon-button" aria-label="Close">×</button>
+    </div>
+    <div id="dialog-content" class="dialog-content"></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

@@ -59,7 +59,10 @@ test("Seer posterior removes only values consistent with color and outcome", () 
 });
 
 test("Fish pieces remain in fixed orientation and never overlap", () => {
+  const bar = FISH_SHAPES.find(shape => shape.id === "4");
   const square = FISH_SHAPES.find(shape => shape.id === "1");
+  assert.deepEqual(bar.cells, [[0, 0], [0, 1], [0, 2]]);
+  assert.equal(fishMaskAt(bar, 0), (1 << 0) | (1 << 6) | (1 << 12));
   assert.equal(square.cells.length, 4);
   const mask = fishMaskAt(square, 0);
   assert.equal(countFilled(mask), 4);

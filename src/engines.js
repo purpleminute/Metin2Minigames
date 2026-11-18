@@ -390,7 +390,7 @@ export function updateSeerBelief(belief, color, ownCard, result) {
 
 export const FISH_SHAPES = [
   { id: "6", name: "Single", cells: [[0, 0]] },
-  { id: "4", name: "Bar", cells: [[0, 0], [1, 0], [2, 0]] },
+  { id: "4", name: "Bar", cells: [[0, 0], [0, 1], [0, 2]] },
   { id: "5", name: "L-left", cells: [[0, 0], [0, 1], [1, 1]] },
   { id: "2", name: "L-right", cells: [[0, 0], [1, 0], [1, 1]] },
   { id: "1", name: "Square", cells: [[0, 0], [1, 0], [0, 1], [1, 1]] },

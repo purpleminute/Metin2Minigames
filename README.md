@@ -8,6 +8,8 @@ A static, browser-only decision assistant for five Metin2 event minigames:
 - Duel of the Seers
 - Fish Puzzle
 
+The complete interface, advice text, and rule notes are available in English, German, and Turkish.
+
 No backend, account, analytics, or external runtime dependency is required. Game state is saved in `localStorage`; the service worker makes the app available offline after the first visit.
 
 ## Run locally
@@ -27,7 +29,7 @@ The app also works if the repository root is published directly as static files.
 
 ## Accuracy model
 
-The app exhaustively checks deterministic legal moves. Okey evaluates every legal current action and possible next draw (sampling only when a refill combination set is very large). Duel of the Seers maintains an exact Bayesian posterior under a uniformly random opponent policy. Catch the King uses constrained posterior sampling because of hidden board information. Yutnori and Fish Puzzle use documented-rule move search plus continuation heuristics where future server RNG or the opponent policy is not published.
+The app exhaustively checks deterministic legal moves. Okey evaluates every legal current action through deterministic full-deck Monte Carlo playouts. Duel of the Seers maintains an exact Bayesian posterior under a uniformly random opponent policy and uses two-round lookahead. Catch the King uses constrained posterior sampling because of hidden board information. Yutnori evaluates the legal piece and stack moves, exact shortcuts and weighted next-throw exposure. Fish Puzzle evaluates every fixed-orientation placement using a depth-2 expected-draw search.
 
 The UI calls out this boundary: hidden randomness cannot be converted into a guaranteed win by any browser tool.
 

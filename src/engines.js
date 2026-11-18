@@ -60,6 +60,45 @@ function handPotential(hand) {
   return best + links * .22;
 }
 
+function okeyActions(hand, canDraw = true) {
+  const actions = validOkeyCombos(hand).map(combo => ({ kind: "play", cards: combo.cards, immediate: combo.score }));
+  if (canDraw) actions.push(...hand.map(card => ({ kind: "discard", cards: [card], immediate: 0 })));
+  return actions;
+}
+
+function applyOkeyAction(hand, deck, action) {
+  const removed = new Set(action.cards.map(card => card.id));
+  const kept = hand.filter(card => !removed.has(card.id));
+  const drawCount = action.kind === "play" ? Math.min(3, deck.length) : Math.min(1, deck.length);
+  return { hand: [...kept, ...deck.slice(0, drawCount)], deck: deck.slice(drawCount), score: action.immediate };
+}
+
+function chooseOkeyContinuation(hand, deck, runningScore, target) {
+  const actions = okeyActions(hand, deck.length > 0);
+  if (!actions.length) return null;
+  return actions.map(action => {
+    const next = applyOkeyAction(hand, deck, action);
+    const nextBest = validOkeyCombos(next.hand)[0]?.score || 0;
+    const reaches = runningScore + action.immediate >= target ? 24 : 0;
+    const utility = action.immediate + handPotential(next.hand) * .52 + nextBest * .2 + reaches;
+    return { action, utility };
+  }).sort((a, b) => b.utility - a.utility)[0].action;
+}
+
+function simulateOkeyAction(hand, remaining, action, score, target, seed) {
+  const deck = shuffle([...remaining], mulberry32(seed));
+  let state = applyOkeyAction(hand, deck, action);
+  let gained = state.score;
+  let guard = 0;
+  while (guard++ < 30) {
+    const next = chooseOkeyContinuation(state.hand, state.deck, score + gained, target);
+    if (!next) break;
+    state = applyOkeyAction(state.hand, state.deck, next);
+    gained += state.score;
+  }
+  return gained;
+}
+
 function sampleCombinations(items, count, max = 1200) {
   const total = choose(items.length, count);
   if (total <= max) return combinations(items, count);
@@ -91,27 +130,23 @@ function choose(n, k) {
 }
 
 export function adviseOkey({ hand, usedIds = [], score = 0, target = 400 }) {
-  if (hand.length === 0) return { kind: "empty", title: "Enter your hand", detail: "Click each card once to mark the five cards currently visible." };
+  if (hand.length !== 5) return { kind: "empty", title: "Enter all five cards", detail: `${hand.length}/5 cards entered. The solver waits for the complete hand so it does not recommend from an impossible state.` };
   const blocked = new Set([...hand.map(c => c.id), ...usedIds]);
   const remaining = OKEY_DECK.filter(card => !blocked.has(card.id));
-  const actions = [];
-
-  for (const combo of validOkeyCombos(hand)) {
-    const kept = hand.filter(card => !combo.cards.some(item => item.id === card.id));
-    const drawCount = Math.min(3, remaining.length, Math.max(0, 5 - kept.length));
-    const draws = sampleCombinations(remaining, drawCount);
-    const future = draws.length ? draws.reduce((sum, draw) => sum + handPotential([...kept, ...draw]), 0) / draws.length : 0;
-    const projected = score + combo.score;
-    const thresholdBoost = projected >= target ? 65 : Math.max(0, projected + future - target) * .28;
-    actions.push({ kind: "play", cards: combo.cards, immediate: combo.score, future, utility: combo.score + future * .74 + thresholdBoost });
-  }
-
-  for (const discarded of hand) {
-    const kept = hand.filter(card => card.id !== discarded.id);
-    const future = remaining.length
-      ? remaining.reduce((sum, draw) => sum + handPotential([...kept, draw]), 0) / remaining.length
-      : handPotential(kept);
-    actions.push({ kind: "discard", cards: [discarded], immediate: 0, future, utility: future * .9 });
+  const actions = okeyActions(hand, remaining.length > 0);
+  const simulations = remaining.length > 12 ? 240 : 360;
+  const baseSeed = hand.reduce((sum, card) => sum + card.value * 97 + card.id.charCodeAt(0), usedIds.length * 7919 + score * 13 + target);
+  for (const action of actions) {
+    let total = 0, hits = 0;
+    for (let i = 0; i < simulations; i++) {
+      const gained = simulateOkeyAction(hand, remaining, action, score, target, baseSeed + i * 2654435761);
+      total += gained;
+      if (score + gained >= target) hits++;
+    }
+    action.expectedGain = total / simulations;
+    action.targetChance = hits / simulations;
+    action.future = action.expectedGain - action.immediate;
+    action.utility = action.targetChance * 1000 + action.expectedGain;
   }
 
   actions.sort((a, b) => b.utility - a.utility);
@@ -120,10 +155,11 @@ export function adviseOkey({ hand, usedIds = [], score = 0, target = 400 }) {
     ...best,
     title: best.kind === "play" ? `Play ${formatCards(best.cards)}` : `Discard ${formatCards(best.cards)}`,
     detail: best.kind === "play"
-      ? `Bank ${best.immediate} points now. This has the strongest immediate score plus continuation value across the ${remaining.length} unseen cards.`
-      : "No scoring set is worth breaking. This discard preserves the strongest pairs and run fragments.",
+      ? `Bank ${best.immediate} points now. Full-deck playouts give this the best ${target}-point finish rate.`
+      : `Discard this card. Full-deck playouts show that keeping the other four gives the best ${target}-point finish rate.`,
     alternatives: actions.slice(1, 4),
-    remaining: remaining.length
+    remaining: remaining.length,
+    simulations
   };
 }
 
@@ -151,6 +187,13 @@ export function kingNeighbors(index) {
     if (r >= 0 && r < 5 && c >= 0 && c < 5) out.push(r * 5 + c);
   }
   return out;
+}
+
+export function kingCompletionBonus(index, cells) {
+  const row = Math.floor(index / 5), col = index % 5;
+  const rowComplete = Array.from({ length: 5 }, (_, c) => row * 5 + c).every(i => i === index || cells[i]?.value);
+  const columnComplete = Array.from({ length: 5 }, (_, r) => r * 5 + col).every(i => i === index || cells[i]?.value);
+  return (rowComplete ? 10 : 0) + (columnComplete ? 10 : 0);
 }
 
 function shuffle(array, rand) {
@@ -219,9 +262,7 @@ export function adviseKing({ cells, currentCard = "1" }) {
         success++;
         points += KING_POINTS[value];
         if (valueNum < cardNum) keep++;
-        const row = Math.floor(index / 5);
-        const rowIndexes = Array.from({ length: 5 }, (_, c) => row * 5 + c);
-        if (rowIndexes.every(i => i === index || cells[i]?.value)) rowBonus += 10;
+        rowBonus += kingCompletionBonus(index, cells);
       }
       if (trapped) fiveTrap++;
       if (value === "K") king++;
@@ -250,16 +291,15 @@ export function formatPercent(value, digits = 0) {
 const OUTER = Array.from({ length: 20 }, (_, i) => `o${i + 1}`);
 export const YUT_POSITIONS = ["start", ...OUTER.slice(0, 19), "a1", "a2", "ca", "a3", "a4", "b1", "b2", "cb", "b3", "b4", "home"];
 
-function yutForward(position, steps) {
+export function moveYutPosition(position, steps) {
   if (position === "home") return "home";
+  if (steps === -1) return yutBackward(position);
   if (position === "start") return steps >= 20 ? "home" : `o${steps}`;
   const routeA = ["o5", "a1", "a2", "ca", "a3", "a4", "o15", "o16", "o17", "o18", "o19", "home"];
   const routeB = ["o10", "b1", "b2", "cb", "b3", "b4", "home"];
   if (routeA.includes(position)) return routeA[Math.min(routeA.indexOf(position) + steps, routeA.length - 1)];
   if (routeB.includes(position)) return routeB[Math.min(routeB.indexOf(position) + steps, routeB.length - 1)];
   const n = Number(position.slice(1));
-  if (n === 5) return yutForward("o5", steps);
-  if (n === 10) return yutForward("o10", steps);
   const target = n + steps;
   return target >= 20 ? "home" : `o${target}`;
 }
@@ -294,35 +334,63 @@ export function yutDistance(position) {
 export function adviseYut({ player, cpu, roll, movesLeft = 20 }) {
   const steps = Number(roll);
   const candidates = [];
+  const handled = new Set();
   player.forEach((position, piece) => {
     if (position === "home") return;
     if (steps === -1 && position === "start") return;
-    const destination = steps === -1 ? yutBackward(position) : yutForward(position, steps);
+    const pieces = !["start", "home"].includes(position)
+      ? player.map((pos, index) => pos === position ? index : -1).filter(index => index >= 0)
+      : [piece];
+    const groupKey = pieces.join(",");
+    if (handled.has(groupKey)) return;
+    handled.add(groupKey);
+    const destination = moveYutPosition(position, steps);
     const captureCount = cpu.filter(pos => pos === destination && !["start", "home"].includes(pos)).length;
-    const stack = player.some((pos, index) => index !== piece && pos === destination && !["start", "home"].includes(pos));
-    const progress = yutDistance(position) - yutDistance(destination);
-    const finish = destination === "home" ? 1 : 0;
-    const shortcut = ["o5", "o10", "a1", "b1"].includes(destination) ? 1 : 0;
+    const joinedPieces = player.map((pos, index) => pos === destination && !pieces.includes(index) && !["start", "home"].includes(pos) ? index : -1).filter(index => index >= 0);
+    const progress = (yutDistance(position) - yutDistance(destination)) * pieces.length;
+    const finishCount = destination === "home" ? pieces.length : 0;
+    const shortcut = ["o5", "o10"].includes(destination) ? 1 : 0;
+    const rollWeights = [[-1, 1], [1, 3], [2, 6], [3, 4], [4, 1], [5, 1]];
     const exposed = cpu.reduce((risk, pos) => {
-      const delta = yutDistance(pos) - yutDistance(destination);
-      return risk + (delta >= 1 && delta <= 5 ? (6 - delta) * .7 : 0);
+      if (["start", "home"].includes(pos) || ["start", "home"].includes(destination)) return risk;
+      const captureWeight = rollWeights.reduce((sum, [cpuRoll, weight]) => sum + (moveYutPosition(pos, cpuRoll) === destination ? weight : 0), 0);
+      return risk + captureWeight / 16;
     }, 0);
-    const urgency = movesLeft <= 6 ? finish * 18 + progress * .7 : 0;
-    const utility = progress * 3 + captureCount * 24 + finish * 34 + shortcut * 5 + (stack ? 3 : 0) - exposed + urgency;
-    candidates.push({ piece, from: position, destination, captureCount, stack, progress, finish, utility });
+    const urgency = movesLeft <= 6 ? finishCount * 20 + progress * .8 : 0;
+    const utility = progress * 3 + captureCount * 25 + finishCount * 36 + shortcut * 5 + joinedPieces.length * 5 - exposed * 20 + urgency;
+    candidates.push({ piece: pieces[0], pieces, from: position, destination, captureCount, stack: joinedPieces.length > 0, joinedPieces, progress, finish: finishCount > 0, finishCount, exposed, utility });
   });
   candidates.sort((a, b) => b.utility - a.utility);
   if (!candidates.length) return { kind: "pass", title: "Pass this turn", detail: "Back-do cannot move a piece while both are off the board." };
   const best = candidates[0];
   return {
-    kind: "move", title: `Move piece ${best.piece + 1}`, detail: `${labelYutPosition(best.from)} → ${labelYutPosition(best.destination)}${best.captureCount ? ` · capture ${best.captureCount}` : ""}${best.stack ? " · stack" : ""}`,
+    kind: "move", title: `Move ${best.pieces.length > 1 ? "stack" : `piece ${best.piece + 1}`}`, detail: `${labelYutPosition(best.from)} → ${labelYutPosition(best.destination)}${best.captureCount ? ` · capture ${best.captureCount}` : ""}${best.stack ? " · join your other piece" : ""}`,
     ...best, alternatives: candidates.slice(1)
   };
 }
 
+export function applyYutMove({ player, cpu }, move) {
+  const nextPlayer = [...player], nextCpu = [...cpu];
+  for (const piece of move.pieces || [move.piece]) nextPlayer[piece] = move.destination;
+  if (move.captureCount) {
+    nextCpu.forEach((position, index) => { if (position === move.destination) nextCpu[index] = "start"; });
+  }
+  return { player: nextPlayer, cpu: nextCpu };
+}
+
 export function labelYutPosition(position) {
-  const labels = { start: "Start", home: "Home", a1: "Shortcut A1", a2: "Shortcut A2", ca: "Center ↗", a3: "Shortcut A3", a4: "Shortcut A4", b1: "Shortcut B1", b2: "Shortcut B2", cb: "Center ↘", b3: "Shortcut B3", b4: "Shortcut B4" };
-  return labels[position] || `Outer ${position.slice(1)}`;
+  const labels = {
+    start: "Start", home: "Finished",
+    o5: "Bottom-left shortcut", o10: "Top-left shortcut", o15: "Top-right corner",
+    a1: "Lower diagonal · 1", a2: "Lower diagonal · 2", ca: "Center toward top-right", a3: "Upper diagonal · 1", a4: "Upper diagonal · 2",
+    b1: "Upper-left diagonal · 1", b2: "Upper-left diagonal · 2", cb: "Center toward home", b3: "Lower-right diagonal · 1", b4: "Lower-right diagonal · 2"
+  };
+  if (labels[position]) return labels[position];
+  const n = Number(position.slice(1));
+  if (n <= 4) return `Bottom lane · ${n}`;
+  if (n <= 9) return `Left lane · ${n - 5}`;
+  if (n <= 14) return `Top lane · ${n - 10}`;
+  return `Right lane · ${n - 15}${n === 19 ? " (one step home)" : ""}`;
 }
 
 export function initialSeerBelief() {
@@ -335,14 +403,14 @@ function bits(mask) {
   return values;
 }
 
-export function seerDistribution(belief, color) {
-  const parity = color === "black" ? 0 : 1;
+export function seerDistribution(belief, color = null) {
+  const parity = color === "black" ? 0 : color === "white" ? 1 : null;
   const probabilities = Array(9).fill(0);
   let total = 0;
   for (const state of belief) {
     const all = bits(state.mask);
     for (const value of all) {
-      if (value % 2 === parity) {
+      if (parity === null || value % 2 === parity) {
         const mass = state.weight / Math.max(1, all.length);
         probabilities[value] += mass;
         total += mass;
@@ -353,20 +421,46 @@ export function seerDistribution(belief, color) {
   return probabilities;
 }
 
-export function adviseSeer({ ownMask = 0x1ff, belief = initialSeerBelief(), color = "black", objective = "wins" }) {
-  const distribution = seerDistribution(belief, color);
-  const actions = bits(ownMask).map(card => {
+function seerImmediateActions(ownMask, belief, objective) {
+  const distribution = seerDistribution(belief);
+  return bits(ownMask).map(card => {
     let win = 0, tie = 0, coins = 0;
     distribution.forEach((p, opponent) => {
       if (card > opponent) { win += p; coins += p * (card - opponent); }
       else if (card === opponent) tie += p;
     });
-    const preservation = (8 - card) * .008;
-    const utility = objective === "coins" ? coins + win * .34 + preservation : win + coins * .035 + preservation;
-    return { card, win, tie, lose: 1 - win - tie, coins, utility };
-  }).sort((a, b) => b.utility - a.utility || a.card - b.card);
-  if (!actions.length || !distribution.some(Boolean)) return { kind: "empty", title: "No legal prediction", detail: "Check the remaining cards and the opponent color." };
-  return { kind: "move", title: `Play ${actions[0].card}`, detail: objective === "coins" ? "Highest expected coin return under the current posterior." : "Highest win probability while preserving stronger cards when values tie.", ...actions[0], alternatives: actions.slice(1, 4), distribution };
+    const preservation = (8 - card) * .006;
+    const immediateUtility = objective === "coins" ? coins + win * .3 + preservation : win + coins * .025 + preservation;
+    return { card, win, tie, lose: 1 - win - tie, coins, immediateUtility, utility: immediateUtility };
+  });
+}
+
+export function adviseSeer({ ownMask = 0x1ff, belief = initialSeerBelief(), objective = "wins" }) {
+  const distribution = seerDistribution(belief);
+  const actions = seerImmediateActions(ownMask, belief, objective);
+  for (const action of actions) {
+    const observations = new Map();
+    distribution.forEach((probability, opponent) => {
+      if (!probability) return;
+      const color = opponent % 2 === 0 ? "black" : "white";
+      const result = action.card > opponent ? "win" : action.card === opponent ? "tie" : "lose";
+      const key = `${color}:${result}`;
+      observations.set(key, (observations.get(key) || 0) + probability);
+    });
+    let future = 0;
+    for (const [observation, probability] of observations) {
+      const [color, result] = observation.split(":");
+      const nextBelief = updateSeerBelief(belief, color, action.card, result);
+      const nextOwnMask = ownMask & ~(1 << action.card);
+      const bestNext = seerImmediateActions(nextOwnMask, nextBelief, objective).sort((a, b) => b.immediateUtility - a.immediateUtility)[0];
+      if (bestNext) future += probability * bestNext.immediateUtility;
+    }
+    action.future = future;
+    action.utility = action.immediateUtility + future * .72;
+  }
+  actions.sort((a, b) => b.utility - a.utility || a.card - b.card);
+  if (!actions.length || !distribution.some(Boolean)) return { kind: "empty", title: "No legal prediction", detail: "Check the remaining cards and round history." };
+  return { kind: "move", title: `Play ${actions[0].card}`, detail: objective === "coins" ? "Best expected coin return with a two-round Bayesian lookahead." : "Best expected round-win value with a two-round Bayesian lookahead.", ...actions[0], alternatives: actions.slice(1, 4), distribution };
 }
 
 export function updateSeerBelief(belief, color, ownCard, result) {
@@ -461,22 +555,42 @@ function fishHeuristic(board) {
   return empty / 3.15 + components.length * .5 + singles * 3.8 + awkward * .65 + jagged * .32;
 }
 
+function fishExpectedCost(board, depth, memo) {
+  if (popcount(board) === 24) return 0;
+  if (depth <= 0) return fishHeuristic(board);
+  const key = `${board}:${depth}`;
+  if (memo.has(key)) return memo.get(key);
+  const normalShapes = FISH_SHAPES.filter(shape => !shape.deluxe);
+  const pieceCosts = normalShapes.map(shape => {
+    const placements = legalFishPlacements(board, shape);
+    if (!placements.length) return Infinity;
+    return Math.min(...placements.map(move => fishExpectedCost(move.board, depth - 1, memo)));
+  }).filter(Number.isFinite).sort((a, b) => a - b);
+  let best = Infinity, sum = 0;
+  for (let accepted = 1; accepted <= pieceCosts.length; accepted++) {
+    sum += pieceCosts[accepted - 1];
+    best = Math.min(best, (normalShapes.length + sum) / accepted);
+  }
+  const result = Number.isFinite(best) ? best : fishHeuristic(board) + normalShapes.length;
+  memo.set(key, result);
+  return result;
+}
+
 export function adviseFish({ board = 0, shapeId }) {
   const shape = FISH_SHAPES.find(item => item.id === shapeId);
   if (!shape) return { kind: "empty", title: "Select the drawn piece", detail: "Choose the exact fixed orientation shown in Metin2." };
+  const memo = new Map();
   const placements = legalFishPlacements(board, shape).map(move => {
     const components = emptyComponents(move.board);
-    const score = fishHeuristic(move.board) + components.filter(size => size === 1).length * 2.2;
+    const score = 1 + fishExpectedCost(move.board, 2, memo);
     return { ...move, score, components };
   }).sort((a, b) => a.score - b.score || b.anchor - a.anchor);
-  if (!placements.length) return { kind: "discard", title: "Discard this piece", detail: "It has no legal placement on the current board." };
+  const discardCost = 1 + fishExpectedCost(board, 2, memo);
+  if (!placements.length) return { kind: "discard", title: "Discard this piece", detail: "It has no legal placement on the current board.", expectedRemaining: discardCost };
   const best = placements[0];
-  const baseline = fishHeuristic(board);
-  const createsSingle = best.components.some(size => size === 1);
-  const discard = !shape.deluxe && createsSingle && best.score > baseline + 1.15 && 24 - popcount(board) > shape.cells.length + 1;
-  if (discard) return { kind: "discard", title: "Discard this piece", detail: "Every legal placement creates an expensive isolated hole. Spending one attempt now has lower expected cost.", alternatives: placements.slice(0, 3) };
+  if (!shape.deluxe && discardCost + .05 < best.score) return { kind: "discard", title: "Discard this piece", detail: "Depth-2 expected-draw search finds that waiting costs fewer attempts than every legal placement.", alternatives: placements.slice(0, 3), expectedRemaining: discardCost };
   const col = String.fromCharCode(65 + best.anchor % 6), row = Math.floor(best.anchor / 6) + 1;
-  return { kind: "place", title: `Place at ${col}${row}`, detail: "This anchor leaves the most compact, tileable remainder and minimizes single-cell traps.", ...best, alternatives: placements.slice(1, 4), empty: 24 - popcount(best.board) };
+  return { kind: "place", title: `Place at ${col}${row}`, detail: "Best expected remaining-attempt cost under a depth-2 random-piece search.", ...best, alternatives: placements.slice(1, 4), empty: 24 - popcount(best.board), expectedRemaining: best.score };
 }
 
 export function applyFishMove(board, shapeId, anchor) {

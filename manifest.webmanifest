@@ -1,0 +1,9 @@
+{
+  "name": "Metin2 Minigame Oracle",
+  "short_name": "M2 Oracle",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#070b12",
+  "theme_color": "#070b12",
+  "description": "Browser-only move advisor for five Metin2 event minigames."
+}

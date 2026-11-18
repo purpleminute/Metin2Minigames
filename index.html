@@ -37,6 +37,7 @@
           <h1 id="page-title">Okey Card Game</h1>
         </div>
         <div class="top-actions">
+          <label class="language-picker"><span id="language-label">Language</span><select id="language-select" aria-label="Language"><option value="en">English</option><option value="de">Deutsch</option><option value="tr">Türkçe</option></select></label>
           <button id="rules-button" class="ghost-button">Rules & method</button>
           <button id="reset-button" class="danger-button">Reset game</button>
         </div>
@@ -45,14 +46,14 @@
       <div id="game-root" class="game-root" aria-live="polite"></div>
 
       <footer class="disclaimer">
-        <b>What “perfect” means here.</b> The advisor exhausts deterministic legal moves and uses exact known-card probabilities where the rules expose enough information. Hidden server RNG and undocumented AI behavior are shown as uncertainty, never presented as guaranteed outcomes.
+        <b>What “perfect” means here.</b> <span>The advisor exhausts deterministic legal moves and uses exact known-card probabilities where the rules expose enough information. Hidden server RNG and undocumented AI behavior are shown as uncertainty, never presented as guaranteed outcomes.</span>
       </footer>
     </main>
   </div>
 
   <dialog id="rules-dialog">
     <div class="dialog-head">
-      <div><p class="eyebrow">Reference</p><h2 id="dialog-title">Rules & method</h2></div>
+      <div><p id="dialog-reference" class="eyebrow">Reference</p><h2 id="dialog-title">Rules & method</h2></div>
       <button id="dialog-close" class="icon-button" aria-label="Close">×</button>
     </div>
     <div id="dialog-content" class="dialog-content"></div>
